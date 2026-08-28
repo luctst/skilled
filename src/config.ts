@@ -1,7 +1,9 @@
 import fs from 'node:fs/promises';
 import os from 'node:os';
 import path from 'node:path';
+import { z } from 'zod';
 import { SkilledError } from './errors.js';
+import type { ConfigOrigin, ResolvedConfig, SkilledConfig } from './types.js';
 
 /** Home directory, from the injected env when present so tests stay hermetic. */
 export function homeDir(env: NodeJS.ProcessEnv = process.env): string {
@@ -124,4 +126,136 @@ export async function validateManagedDir(dir: string): Promise<void> {
     ],
     exitCode: 2,
   });
+}
+
+const configFileSchema = z.object({
+  version: z.literal(1),
+  dirs: z.array(z.string()),
+});
+
+async function pathExists(p: string): Promise<boolean> {
+  try {
+    await fs.access(p);
+    return true;
+  } catch {
+    return false;
+  }
+}
+
+/** Writes JSON through a temp file so a crash cannot leave a half-written file. */
+export async function writeJsonAtomic(file: string, value: unknown): Promise<void> {
+  const tmp = `${file}.tmp`;
+  await fs.writeFile(tmp, `${JSON.stringify(value, null, 2)}\n`, 'utf8');
+  await fs.rename(tmp, file);
+}
+
+function badConfigFile(cfgPath: string, problem: string, detail: string): SkilledError {
+  return new SkilledError({
+    code: 'BAD_DIR',
+    problem,
+    cause: `${detail} No managed file was modified.`,
+    fixes: [
+      `cat ${cfgPath}`,
+      `rm ${cfgPath}   start over from auto-detection`,
+      'skilled config dir <path>   rewrite it',
+    ],
+    exitCode: 2,
+  });
+}
+
+/** Reads ~/.config/skilled/config.json. An absent file is not an error. */
+export async function readConfigFile(cfgPath: string): Promise<SkilledConfig> {
+  let raw: string;
+  try {
+    raw = await fs.readFile(cfgPath, 'utf8');
+  } catch {
+    return { version: 1, dirs: [] };
+  }
+
+  let parsed: unknown;
+  try {
+    parsed = JSON.parse(raw);
+  } catch (err) {
+    const message = err instanceof Error ? err.message : String(err);
+    throw badConfigFile(cfgPath, `${cfgPath} is not valid JSON.`, `Parsing it failed: ${message}.`);
+  }
+
+  const result = configFileSchema.safeParse(parsed);
+  if (!result.success) {
+    const issue = result.error.issues[0];
+    const field = issue.path.length > 0 ? issue.path.join('.') : '(root)';
+    throw badConfigFile(
+      cfgPath,
+      `${cfgPath} is not a valid skilled config.`,
+      `Field \`${field}\`: ${issue.message}.`,
+    );
+  }
+
+  const config: SkilledConfig = result.data;
+  return config;
+}
+
+export interface ResolveConfigOptions {
+  dirFlag?: string;
+  env?: NodeJS.ProcessEnv;
+  /**
+   * When true, a managed dir that fails validation is dropped instead of
+   * throwing. Only `skilled config` sets this: it must run even when the
+   * current setup is broken. An explicit dirFlag is always strict.
+   */
+  tolerant?: boolean;
+}
+
+async function keepValid(dirs: string[], tolerant: boolean): Promise<string[]> {
+  const kept: string[] = [];
+  for (const dir of dirs) {
+    try {
+      await validateManagedDir(dir);
+      kept.push(dir);
+    } catch (err) {
+      if (!tolerant) throw err;
+    }
+  }
+  return kept;
+}
+
+/**
+ * Precedence, highest first: --dir flag, SKILLED_DIR, config file, ~/.claude.
+ * origin reports which one actually applied, so it is never a mystery.
+ */
+export async function resolveConfig(opts: ResolveConfigOptions): Promise<ResolvedConfig> {
+  const env = opts.env ?? process.env;
+  const tolerant = opts.tolerant === true;
+  const cfgPath = configPath(env);
+  const configExists = await pathExists(cfgPath);
+
+  const finish = async (dirs: string[], origin: ConfigOrigin): Promise<ResolvedConfig> => ({
+    dirs: await keepValid(dirs, tolerant),
+    origin,
+    configPath: cfgPath,
+    configExists,
+  });
+
+  if (opts.dirFlag !== undefined && opts.dirFlag.length > 0) {
+    const dir = expandPath(opts.dirFlag, env);
+    await validateManagedDir(dir);
+    return { dirs: [dir], origin: 'flag', configPath: cfgPath, configExists };
+  }
+
+  const envDir = env.SKILLED_DIR;
+  if (envDir !== undefined && envDir.length > 0) {
+    return await finish([expandPath(envDir, env)], 'env');
+  }
+
+  if (configExists) {
+    const file = await readConfigFile(cfgPath);
+    if (file.dirs.length > 0) {
+      return await finish(
+        file.dirs.map((dir) => expandPath(dir, env)),
+        'file',
+      );
+    }
+  }
+
+  return await finish([autodetectDir(env)], 'autodetect');
 }
