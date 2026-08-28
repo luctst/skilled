@@ -282,3 +282,32 @@ skill or agent file has been modified — skilled only ever writes .skilled/."
 later for the same id — the scan then prints "a second candidate turned up; I'll ask"
 rather than leaving a stale checkmark on screen.
 **Spec/Task:** spec 02 Tasks 9, 15, 20.
+
+## 2026-08-28 — Prettier ignores the docs and the byte-sensitive fixture
+
+**Decision:** `.prettierignore` gains `CLAUDE.md`, `AGENTS.md`, `skilled_registry`, and
+`tests/fixtures/managed` on top of the three entries spec 01 Task 1 lists.
+**Why:** `npm run check` starts with `format:check`, which runs over the whole repo.
+Out of the box it failed on nine pre-existing markdown files (the specs, DESIGN.md,
+DECISIONS.md, CLAUDE.md) and on the fixture's `channel-benchmarks.md` table. Neither is
+formattable: rewriting the specs would edit files this spec does not own, and the
+fixture mirrors a real `~/.claude` byte for byte — specs 02–04 hash and line-match it,
+so a reflowed table would silently move ground truth under them.
+**Rejected:** running `prettier --write .` once and committing the reformat. It touches
+seven spec files to satisfy a formatter that exists for `src/`, and it makes the
+ponytail line-13 invariant a formatter's problem rather than the fixture's.
+**Spec/Task:** spec 01 Tasks 1 and 3.
+
+## 2026-08-28 — Prettier reflows two unions in the verbatim types.ts
+
+**Decision:** `src/types.ts` was copied verbatim from the contract, then run through
+`prettier --write`, which collapsed `DetectionMethod` and `MergeOutcome` onto single
+lines because both fit inside the 100-column limit.
+**Why:** the contract says copy verbatim; spec 01 says the Prettier settings were
+chosen so spec code is already Prettier-clean. Those two claims conflict for exactly
+these two declarations. The change is whitespace only — no member is added, renamed, or
+reordered — so the verbatim requirement survives in substance while `npm run check`
+stays green.
+**Rejected:** a `// prettier-ignore` comment above each union, which adds two lines the
+contract does not have to a file whose whole point is that it matches the contract.
+**Spec/Task:** spec 01 Task 1 Step 6.
