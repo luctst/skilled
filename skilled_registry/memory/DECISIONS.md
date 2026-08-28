@@ -426,3 +426,46 @@ first reader; the parser has to accept it before then.
 **Rejected:** letting spec 02 add the flag when it adds the reader — spec 02 does not own
 `cli.ts` and would be editing another spec's file.
 **Spec/Task:** spec 01 Task 16 Step 3.
+
+## 2026-08-28 — One import per module in cli.ts, not one per task
+
+**Decision:** Task 19's `import { autodetectDir, setConfigDir } from './config.js';` was
+merged into the existing `import { resolveConfig } from './config.js';` line, giving
+`import { autodetectDir, resolveConfig, setConfigDir } from './config.js';`. The value
+and `import type` pair from `./render/status.js` stays two statements, as the spec writes
+it.
+**Why:** the spec's wording ("add these imports") would leave two separate named-import
+statements for the same specifier, which is duplication with no upside — the identifier
+set is what matters, and `import type` is a genuinely different statement kind so that
+pair is not duplication. ESLint has no `no-duplicate-imports` rule configured, so this is
+a readability call, not a lint fix. No identifier was added or dropped.
+**Rejected:** two `from './config.js'` lines exactly as written, and moving the whole
+import block, which would churn lines earlier tasks own.
+**Spec/Task:** spec 01 Task 19 Step 3, Task 20 Step 3.
+
+## 2026-08-28 — Two more Prettier reflows, in the scan command and the e2e imports
+
+**Decision:** the `blocks.push(...)` call in `scanCommand` keeps its three render calls on
+one argument line rather than the spec's exploded array, and `tests/cli.e2e.test.ts`
+splits the four-name `./fixtures/index.js` import across lines.
+**Why:** the same 100-column `printWidth` conflict recorded for Tasks 7, 10–11, 13–14 and
+16. The spec's array fits under 100 once collapsed, so Prettier collapses it; the e2e
+import line is 101 columns, so Prettier explodes it. Whitespace only — no argument,
+string, or imported name changed, and `tests/cli.config.test.ts`, `tests/cli.scan.test.ts`
+and every other line of both Task 19–21 blocks are byte-identical to the spec.
+**Rejected:** `// prettier-ignore`, for the reason recorded under Tasks 13–14.
+**Spec/Task:** spec 01 Task 20 Step 3, Task 21 Step 1.
+
+## 2026-08-28 — registerBuiltins may name commands declared below it
+
+**Decision:** `registerBuiltins()` sits where Task 19 put it, above `scanCommand` and
+`showCommand`, and Task 20 extends its body to register both.
+**Why:** the spec inserts each task's block immediately above the `process.argv[1]` guard,
+so Task 20's consts land after Task 19's function. That is safe here and only here:
+`registerBuiltins` is called from `ensureCommands()`, which `run()` awaits, so every
+`const` has been initialised long before the first call. The temporal-dead-zone hazard the
+contract warns about is the opposite case — a module-level `registerCommand(...)` that
+runs *during* evaluation.
+**Rejected:** moving `registerBuiltins` to the bottom of the file, which would reorder a
+block Task 19 already committed for no behavioural gain.
+**Spec/Task:** spec 01 Task 19 Step 3, Task 20 Step 3.
