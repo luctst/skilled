@@ -339,3 +339,18 @@ changed, and `npm run check` runs `format:check` first.
 **Rejected:** widening `printWidth`, which would reformat every file to satisfy one
 line.
 **Spec/Task:** spec 01 Task 7 Step 1.
+
+## 2026-08-28 — Three more Prettier reflows in the Tasks 10–11 test code
+
+**Decision:** `tests/manifest.io.test.ts` keeps the spec's code with two object literals
+wrapped across several lines (the `entries: [{ ...makeEntry('skills/cso'), base: {...} }]`
+and `... detection: {...} }]` lines are 122 and 133 columns), and
+`tests/discover.test.ts` wraps its four-name import from `./fixtures/index.js` (101
+columns).
+**Why:** the same conflict already recorded for `types.ts` and Task 7 — Prettier's
+100-column `printWidth` runs first in `npm run check`, and the spec's own text exceeds
+it. Whitespace only: no assertion, value, key order, or name changed. Both files pass
+their spec-stated test counts (8 and 9) before and after the reflow.
+**Rejected:** `// prettier-ignore` on each literal, which adds lines the spec does not
+have to files whose value is that they match the spec.
+**Spec/Task:** spec 01 Task 10 Step 1, Task 11 Step 1.
