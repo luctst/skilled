@@ -259,3 +259,29 @@ export async function resolveConfig(opts: ResolveConfigOptions): Promise<Resolve
 
   return await finish([autodetectDir(env)], 'autodetect');
 }
+
+/**
+ * Persists which directory skilled manages. Validates first: the design says
+ * say what was expected rather than accepting a typo silently.
+ * The optional env parameter exists so tests never touch the real ~/.config.
+ */
+export async function setConfigDir(
+  dir: string,
+  mode: 'replace' | 'add',
+  env: NodeJS.ProcessEnv = process.env,
+): Promise<SkilledConfig> {
+  const abs = expandPath(dir, env);
+  await validateManagedDir(abs);
+
+  const cfgPath = configPath(env);
+  const current = await readConfigFile(cfgPath);
+  const dirs =
+    mode === 'replace'
+      ? [abs]
+      : [...current.dirs.map((d) => expandPath(d, env)).filter((d) => d !== abs), abs];
+
+  const next: SkilledConfig = { version: 1, dirs };
+  await fs.mkdir(path.dirname(cfgPath), { recursive: true });
+  await writeJsonAtomic(cfgPath, next);
+  return next;
+}
