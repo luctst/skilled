@@ -4,14 +4,20 @@ import { pathToFileURL } from 'node:url';
 import { autodetectDir, resolveConfig, setConfigDir } from './config.js';
 import { discover } from './discover.js';
 import { SkilledError } from './errors.js';
+import { findEntry, readManifest } from './manifest.js';
 import {
   countItems,
   renderConfig,
   renderConfigSaved,
+  renderItemDetail,
+  renderNextSteps,
   renderNoManagedDirHint,
+  renderScanHeader,
+  renderStatusReport,
+  tildify,
 } from './render/status.js';
 import type { DirSummary, RenderOptions } from './render/status.js';
-import type { LocalItem, ResolvedConfig } from './types.js';
+import type { LocalItem, Manifest, ResolvedConfig, StatusReport, StatusRow } from './types.js';
 
 export interface ParsedArgs {
   args: string[];
@@ -467,8 +473,131 @@ const configCommand: Command = {
 };
 
 export function registerBuiltins(): void {
+  registerCommand(scanCommand);
+  registerCommand(showCommand);
   registerCommand(configCommand);
 }
+
+/**
+ * The status of a managed dir from local information alone: nothing has been
+ * compared with upstream, so every row is 'unknown'. identified counts the
+ * items the manifest already has a source for. Spec 02's buildStatus supersedes
+ * this once detection exists.
+ */
+export function buildLocalReport(
+  dir: string,
+  items: LocalItem[],
+  manifest: Manifest,
+): StatusReport {
+  const rows: StatusRow[] = items.map((item) => {
+    const entry = findEntry(manifest, item.id);
+    return entry === undefined
+      ? { id: item.id, status: 'unknown', localEdits: false }
+      : { id: item.id, status: 'unknown', source: entry.source, localEdits: false };
+  });
+  const identified = rows.filter((row) => row.source !== undefined).length;
+
+  return {
+    dir,
+    rows,
+    identified,
+    total: rows.length,
+    behind: 0,
+    unknown: rows.length - identified,
+    fetchedAt: null,
+  };
+}
+
+const EMPTY_REPORT: StatusReport = {
+  dir: '',
+  rows: [],
+  identified: 0,
+  total: 0,
+  behind: 0,
+  unknown: 0,
+  fetchedAt: null,
+};
+
+const scanCommand: Command = {
+  name: 'scan',
+  summary: 'scan the managed directory and report',
+  async run(ctx: CommandContext) {
+    const opts: RenderOptions = { color: ctx.flags.color === true };
+    const reports: StatusReport[] = [];
+    const blocks: string[] = [];
+
+    for (const dir of ctx.config.dirs) {
+      const items = await discover(dir);
+      const manifest = await readManifest(dir);
+      const report = buildLocalReport(dir, items, manifest);
+      reports.push(report);
+      blocks.push(
+        [renderScanHeader(dir, countItems(items), opts), '', renderStatusReport(report, opts)].join(
+          '\n',
+        ),
+      );
+    }
+
+    const stale = reports.some((report) => report.behind > 0) ? 1 : 0;
+
+    if (ctx.flags.json === true) {
+      const first = reports[0] ?? EMPTY_REPORT;
+      if (reports.length > 1) {
+        ctx.stderr(
+          `note: --json covers ${tildify(first.dir)} only; re-run with --dir <path> for the others.`,
+        );
+      }
+      ctx.stdout(JSON.stringify(first, null, 2));
+      return stale;
+    }
+
+    ctx.stdout(blocks.join('\n\n'));
+    ctx.stdout('');
+    ctx.stdout(renderNextSteps(reports, opts));
+    return stale;
+  },
+};
+
+const showCommand: Command = {
+  name: 'show',
+  summary: 'detail on one entry',
+  async run(ctx: CommandContext) {
+    const opts: RenderOptions = { color: ctx.flags.color === true };
+    const name = ctx.args[0];
+    if (name === undefined) {
+      throw new SkilledError({
+        code: 'UNKNOWN_ENTRY',
+        problem: '`skilled <name>` needs a name.',
+        cause:
+          'It shows the detail for one skill or agent, so it needs one name. No managed file was modified.',
+        fixes: ['skilled            list everything that was found'],
+        exitCode: 2,
+      });
+    }
+
+    const found: Array<{ item: LocalItem; dir: string }> = [];
+    for (const dir of ctx.config.dirs) {
+      for (const item of await discover(dir)) {
+        found.push({ item, dir });
+      }
+    }
+
+    const item = resolveName(
+      name,
+      found.map((entry) => entry.item),
+    );
+    const owner = found.find((entry) => entry.item.absPath === item.absPath);
+    const manifest = await readManifest(owner === undefined ? item.absPath : owner.dir);
+    const entry = findEntry(manifest, item.id);
+
+    if (ctx.flags.json === true) {
+      ctx.stdout(JSON.stringify({ item, entry: entry ?? null }, null, 2));
+      return 0;
+    }
+    ctx.stdout(renderItemDetail(item, entry, opts));
+    return 0;
+  },
+};
 
 if (process.argv[1] !== undefined && import.meta.url === pathToFileURL(process.argv[1]).href) {
   // process.exitCode rather than process.exit, so stdout is never truncated
