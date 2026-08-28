@@ -311,3 +311,31 @@ stays green.
 **Rejected:** a `// prettier-ignore` comment above each union, which adds two lines the
 contract does not have to a file whose whole point is that it matches the contract.
 **Spec/Task:** spec 01 Task 1 Step 6.
+
+## 2026-08-28 — Spec 01 Task 7's own commit message violates commitlint
+
+**Decision:** Task 7's commit shipped as
+`feat(config): resolve managed dir by precedence, report origin` (62 chars) instead of
+the spec's `feat(config): resolve the managed directory by precedence and report the
+origin` (79 chars).
+**Why:** the `commit-msg` hook installed in Task 1 enforces
+`@commitlint/config-conventional`, whose `header-max-length` is 72. The spec's literal
+message is rejected at commit time, so it cannot be used as written. The shortened form
+keeps both halves of the meaning — precedence, and reporting which source won.
+**Rejected:** `--no-verify`. The hook exists precisely so a bad message is caught at
+commit time; bypassing it to preserve a bad message inverts the point. Also rejected:
+raising `header-max-length`, which would edit a Task 1 config to accommodate one
+sentence and weaken the rule CLAUDE.md states.
+**Spec/Task:** spec 01 Task 7 Step 5.
+
+## 2026-08-28 — One test line in Task 7 reflowed by Prettier
+
+**Decision:** `tests/config.resolve.test.ts` keeps the spec's code with one call
+wrapped across four lines: the spec's single-line
+`await resolveConfig({ dirFlag: flagDir, env: { ...env, SKILLED_DIR: envDir } })` is 102
+columns, past the 100-column limit, so `format:check` failed on it.
+**Why:** same conflict as the `types.ts` reflow — whitespace only, no assertion or value
+changed, and `npm run check` runs `format:check` first.
+**Rejected:** widening `printWidth`, which would reformat every file to satisfy one
+line.
+**Spec/Task:** spec 01 Task 7 Step 1.
