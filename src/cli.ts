@@ -1,5 +1,6 @@
 #!/usr/bin/env node
 import { SkilledError } from './errors.js';
+import type { LocalItem, ResolvedConfig } from './types.js';
 
 export interface ParsedArgs {
   args: string[];
@@ -91,4 +92,89 @@ export function shouldUseColor(
   if (env.NO_COLOR !== undefined && env.NO_COLOR !== '') return false;
   if (env.FORCE_COLOR !== undefined && env.FORCE_COLOR !== '') return true;
   return isTTY;
+}
+
+export interface Command {
+  name: string;
+  summary: string;
+  run(ctx: CommandContext): Promise<number>; // returns exit code
+}
+
+export interface CommandContext {
+  args: string[];
+  flags: Record<string, string | boolean>;
+  config: ResolvedConfig;
+  stdout: (s: string) => void;
+  stderr: (s: string) => void;
+  /** Always supplied by run(). Commands read this instead of process.env. */
+  env?: NodeJS.ProcessEnv;
+}
+
+/**
+ * The whole surface. scan backs bare `skilled`; show backs `skilled <entry>`.
+ * A reserved name with no command registered is reported, not guessed at.
+ */
+export const RESERVED_COMMANDS: readonly string[] = [
+  'scan',
+  'show',
+  'update',
+  'add',
+  'remove',
+  'config',
+];
+
+const registry = new Map<string, Command>();
+
+/** Registering a name twice replaces it: later specs override spec 01's commands. */
+export function registerCommand(c: Command): void {
+  registry.set(c.name, c);
+}
+
+export function getCommand(name: string): Command | undefined {
+  return registry.get(name);
+}
+
+export function listCommands(): Command[] {
+  return [...registry.values()].sort((a, b) => (a.name < b.name ? -1 : a.name > b.name ? 1 : 0));
+}
+
+function normalizeName(name: string): string {
+  let n = name.trim().replace(/\\/g, '/');
+  while (n.endsWith('/')) n = n.slice(0, -1);
+  if (n.startsWith('./')) n = n.slice(2);
+  if (n.toLowerCase().endsWith('.md')) n = n.slice(0, -3);
+  return n.toLowerCase();
+}
+
+/** Accepts a full id, a bare basename, or an agent filename. */
+export function resolveName(name: string, items: LocalItem[]): LocalItem {
+  const wanted = normalizeName(name);
+  const matches = items.filter((item) => {
+    const id = normalizeName(item.id);
+    return id === wanted || id.slice(id.lastIndexOf('/') + 1) === wanted;
+  });
+
+  const only = matches[0];
+  if (matches.length === 1 && only !== undefined) return only;
+
+  if (matches.length === 0) {
+    throw new SkilledError({
+      code: 'UNKNOWN_ENTRY',
+      problem: `No skill or agent named "${name}".`,
+      cause: `${items.length} entries were found in the managed directory and none of them matched. No managed file was modified.`,
+      fixes: [
+        'skilled            list everything that was found',
+        'skilled config     check which directory skilled manages',
+      ],
+      exitCode: 2,
+    });
+  }
+
+  throw new SkilledError({
+    code: 'AMBIGUOUS_NAME',
+    problem: `"${name}" matches ${matches.length} entries.`,
+    cause: `Candidates: ${matches.map((item) => item.id).join(', ')}. No managed file was modified.`,
+    fixes: matches.map((item) => `skilled ${item.id}`),
+    exitCode: 2,
+  });
 }
