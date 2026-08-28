@@ -4,3 +4,4 @@ package-lock.json
 CLAUDE.md
 AGENTS.md
 skilled_registry
+tests/fixtures/managed
