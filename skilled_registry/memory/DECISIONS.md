@@ -354,3 +354,50 @@ their spec-stated test counts (8 and 9) before and after the reflow.
 **Rejected:** `// prettier-ignore` on each literal, which adds lines the spec does not
 have to files whose value is that they match the spec.
 **Spec/Task:** spec 01 Task 10 Step 1, Task 11 Step 1.
+
+## 2026-08-28 — Task 13's own commit message violates commitlint
+
+**Decision:** Task 13's commit shipped as
+`feat(render): render scan headers, status rows, totals, and hook line` (69 chars)
+instead of the spec's `feat(render): render scan headers, status rows, totals, and the
+hook line` (73 chars).
+**Why:** same conflict already recorded for Task 7 — `header-max-length` is 72 and the
+hook rejects the spec's literal message at commit time. Dropping one article keeps every
+noun, so nothing about what the commit contains is lost.
+**Rejected:** `--no-verify`, for the reason recorded under Task 7.
+**Spec/Task:** spec 01 Task 13 Step 5.
+
+## 2026-08-28 — Four more Prettier reflows in the Tasks 13–14 render code
+
+**Decision:** `src/render/status.ts` keeps the spec's code with four statements
+rewrapped: the Task 13 type import collapsed to one line and was re-split when Task 14
+added `Entry` and `ResolvedConfig`; the `skilled add <url> <name>` step literal and the
+`statusLineSummary` filter/map chain were split (102 and 101 columns); and the
+`renderItemDetail` source `lines.push(...)` collapsed to one line (98 columns).
+**Why:** the same conflict recorded for `types.ts` and Tasks 7 and 10–11 — Prettier's
+100-column `printWidth` runs first in `npm run check` and the spec's own text is on both
+sides of it. Whitespace only: no string, argument, or name changed, and both test files
+are byte-identical to the spec.
+**Rejected:** `// prettier-ignore` per statement, which adds lines the spec does not
+have to the file whose value is that it matches the spec.
+**Spec/Task:** spec 01 Task 13 Step 3, Task 14 Step 3.
+
+## 2026-08-28 — PromptInput.setEncoding takes BufferEncoding, not string
+
+**Decision:** `src/render/prompt.ts` declares `setEncoding(encoding: BufferEncoding):
+void` where Task 15 wrote `setEncoding(encoding: string): void`.
+**Why:** the spec's signature does not typecheck. `defaultPromptIO()` returns
+`process.stdin`, whose `setEncoding(encoding?: BufferEncoding)` is neither assignable to
+nor from `(encoding: string) => void`: the standard direction fails because `string` is
+not a `BufferEncoding`, and the method-bivariance fallback fails too because the optional
+parameter makes the source type `BufferEncoding | undefined`, and `undefined` is not a
+`string` under `strictNullChecks`. `tsc` reported TS2322 at the `process.stdin` literal.
+Narrowing the interface fixes it with one token: the only call site passes `'utf8'`,
+which is a `BufferEncoding` literal, and the test's `FakeInput.setEncoding(encoding:
+string)` still satisfies the interface by method bivariance, so Task 15's test file is
+byte-identical to the spec.
+**Rejected:** `process.stdin as PromptInput` in `defaultPromptIO`, which silences the
+compiler about a genuine mismatch rather than resolving it; and making the interface
+parameter optional, which would let a caller drop the encoding a raw-mode prompt depends
+on.
+**Spec/Task:** spec 01 Task 15 Step 3.
