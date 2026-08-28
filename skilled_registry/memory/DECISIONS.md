@@ -282,3 +282,190 @@ skill or agent file has been modified — skilled only ever writes .skilled/."
 later for the same id — the scan then prints "a second candidate turned up; I'll ask"
 rather than leaving a stale checkmark on screen.
 **Spec/Task:** spec 02 Tasks 9, 15, 20.
+
+## 2026-08-28 — Prettier ignores the docs and the byte-sensitive fixture
+
+**Decision:** `.prettierignore` gains `CLAUDE.md`, `AGENTS.md`, `skilled_registry`, and
+`tests/fixtures/managed` on top of the three entries spec 01 Task 1 lists.
+**Why:** `npm run check` starts with `format:check`, which runs over the whole repo.
+Out of the box it failed on nine pre-existing markdown files (the specs, DESIGN.md,
+DECISIONS.md, CLAUDE.md) and on the fixture's `channel-benchmarks.md` table. Neither is
+formattable: rewriting the specs would edit files this spec does not own, and the
+fixture mirrors a real `~/.claude` byte for byte — specs 02–04 hash and line-match it,
+so a reflowed table would silently move ground truth under them.
+**Rejected:** running `prettier --write .` once and committing the reformat. It touches
+seven spec files to satisfy a formatter that exists for `src/`, and it makes the
+ponytail line-13 invariant a formatter's problem rather than the fixture's.
+**Spec/Task:** spec 01 Tasks 1 and 3.
+
+## 2026-08-28 — Prettier reflows two unions in the verbatim types.ts
+
+**Decision:** `src/types.ts` was copied verbatim from the contract, then run through
+`prettier --write`, which collapsed `DetectionMethod` and `MergeOutcome` onto single
+lines because both fit inside the 100-column limit.
+**Why:** the contract says copy verbatim; spec 01 says the Prettier settings were
+chosen so spec code is already Prettier-clean. Those two claims conflict for exactly
+these two declarations. The change is whitespace only — no member is added, renamed, or
+reordered — so the verbatim requirement survives in substance while `npm run check`
+stays green.
+**Rejected:** a `// prettier-ignore` comment above each union, which adds two lines the
+contract does not have to a file whose whole point is that it matches the contract.
+**Spec/Task:** spec 01 Task 1 Step 6.
+
+## 2026-08-28 — Spec 01 Task 7's own commit message violates commitlint
+
+**Decision:** Task 7's commit shipped as
+`feat(config): resolve managed dir by precedence, report origin` (62 chars) instead of
+the spec's `feat(config): resolve the managed directory by precedence and report the
+origin` (79 chars).
+**Why:** the `commit-msg` hook installed in Task 1 enforces
+`@commitlint/config-conventional`, whose `header-max-length` is 72. The spec's literal
+message is rejected at commit time, so it cannot be used as written. The shortened form
+keeps both halves of the meaning — precedence, and reporting which source won.
+**Rejected:** `--no-verify`. The hook exists precisely so a bad message is caught at
+commit time; bypassing it to preserve a bad message inverts the point. Also rejected:
+raising `header-max-length`, which would edit a Task 1 config to accommodate one
+sentence and weaken the rule CLAUDE.md states.
+**Spec/Task:** spec 01 Task 7 Step 5.
+
+## 2026-08-28 — One test line in Task 7 reflowed by Prettier
+
+**Decision:** `tests/config.resolve.test.ts` keeps the spec's code with one call
+wrapped across four lines: the spec's single-line
+`await resolveConfig({ dirFlag: flagDir, env: { ...env, SKILLED_DIR: envDir } })` is 102
+columns, past the 100-column limit, so `format:check` failed on it.
+**Why:** same conflict as the `types.ts` reflow — whitespace only, no assertion or value
+changed, and `npm run check` runs `format:check` first.
+**Rejected:** widening `printWidth`, which would reformat every file to satisfy one
+line.
+**Spec/Task:** spec 01 Task 7 Step 1.
+
+## 2026-08-28 — Three more Prettier reflows in the Tasks 10–11 test code
+
+**Decision:** `tests/manifest.io.test.ts` keeps the spec's code with two object literals
+wrapped across several lines (the `entries: [{ ...makeEntry('skills/cso'), base: {...} }]`
+and `... detection: {...} }]` lines are 122 and 133 columns), and
+`tests/discover.test.ts` wraps its four-name import from `./fixtures/index.js` (101
+columns).
+**Why:** the same conflict already recorded for `types.ts` and Task 7 — Prettier's
+100-column `printWidth` runs first in `npm run check`, and the spec's own text exceeds
+it. Whitespace only: no assertion, value, key order, or name changed. Both files pass
+their spec-stated test counts (8 and 9) before and after the reflow.
+**Rejected:** `// prettier-ignore` on each literal, which adds lines the spec does not
+have to files whose value is that they match the spec.
+**Spec/Task:** spec 01 Task 10 Step 1, Task 11 Step 1.
+
+## 2026-08-28 — Task 13's own commit message violates commitlint
+
+**Decision:** Task 13's commit shipped as
+`feat(render): render scan headers, status rows, totals, and hook line` (69 chars)
+instead of the spec's `feat(render): render scan headers, status rows, totals, and the
+hook line` (73 chars).
+**Why:** same conflict already recorded for Task 7 — `header-max-length` is 72 and the
+hook rejects the spec's literal message at commit time. Dropping one article keeps every
+noun, so nothing about what the commit contains is lost.
+**Rejected:** `--no-verify`, for the reason recorded under Task 7.
+**Spec/Task:** spec 01 Task 13 Step 5.
+
+## 2026-08-28 — Four more Prettier reflows in the Tasks 13–14 render code
+
+**Decision:** `src/render/status.ts` keeps the spec's code with four statements
+rewrapped: the Task 13 type import collapsed to one line and was re-split when Task 14
+added `Entry` and `ResolvedConfig`; the `skilled add <url> <name>` step literal and the
+`statusLineSummary` filter/map chain were split (102 and 101 columns); and the
+`renderItemDetail` source `lines.push(...)` collapsed to one line (98 columns).
+**Why:** the same conflict recorded for `types.ts` and Tasks 7 and 10–11 — Prettier's
+100-column `printWidth` runs first in `npm run check` and the spec's own text is on both
+sides of it. Whitespace only: no string, argument, or name changed, and both test files
+are byte-identical to the spec.
+**Rejected:** `// prettier-ignore` per statement, which adds lines the spec does not
+have to the file whose value is that it matches the spec.
+**Spec/Task:** spec 01 Task 13 Step 3, Task 14 Step 3.
+
+## 2026-08-28 — PromptInput.setEncoding takes BufferEncoding, not string
+
+**Decision:** `src/render/prompt.ts` declares `setEncoding(encoding: BufferEncoding):
+void` where Task 15 wrote `setEncoding(encoding: string): void`.
+**Why:** the spec's signature does not typecheck. `defaultPromptIO()` returns
+`process.stdin`, whose `setEncoding(encoding?: BufferEncoding)` is neither assignable to
+nor from `(encoding: string) => void`: the standard direction fails because `string` is
+not a `BufferEncoding`, and the method-bivariance fallback fails too because the optional
+parameter makes the source type `BufferEncoding | undefined`, and `undefined` is not a
+`string` under `strictNullChecks`. `tsc` reported TS2322 at the `process.stdin` literal.
+Narrowing the interface fixes it with one token: the only call site passes `'utf8'`,
+which is a `BufferEncoding` literal, and the test's `FakeInput.setEncoding(encoding:
+string)` still satisfies the interface by method bivariance, so Task 15's test file is
+byte-identical to the spec.
+**Rejected:** `process.stdin as PromptInput` in `defaultPromptIO`, which silences the
+compiler about a genuine mismatch rather than resolving it; and making the interface
+parameter optional, which would let a caller drop the encoding a raw-mode prompt depends
+on.
+**Spec/Task:** spec 01 Task 15 Step 3.
+
+## 2026-08-28 — One more Prettier reflow in the Task 16 flag tables
+
+**Decision:** `src/cli.ts` keeps the spec's code with `BOOLEAN_FLAGS` split one entry per
+line, and `tests/cli.run.test.ts` keeps the spec's test with the `Capture.io` type literal
+and the one-line `async run() { return 1; }` double expanded.
+**Why:** the same 100-column `printWidth` conflict already recorded for `types.ts` and
+Tasks 7, 10–11 and 13–14. The `BOOLEAN_FLAGS` line is 103 columns, the `Capture.io` line
+107. Whitespace only — no flag name, string, or argument changed, and `src/cli.ts` for
+Tasks 17–18 and `tests/cli.flags.test.ts` / `tests/cli.registry.test.ts` are
+byte-identical to the spec.
+**Rejected:** `// prettier-ignore`, for the reason recorded under Tasks 13–14.
+**Spec/Task:** spec 01 Task 16 Step 3, Task 18 Step 1.
+
+## 2026-08-28 — Adding a flag means editing BOOLEAN_FLAGS, not just the help text
+
+**Decision:** `--confirm-each` is carried in `BOOLEAN_FLAGS` in `src/cli.ts` and covered by
+its own test in `tests/cli.flags.test.ts`, even though no spec 01 command reads it.
+**Why:** `parseArgs` rejects any token that is in neither `BOOLEAN_FLAGS` nor
+`VALUE_FLAGS`, so a flag documented in `usage()` but missing from the set exits 2 on the
+real binary while every unit test of the consuming command stays green. Spec 02 is the
+first reader; the parser has to accept it before then.
+**Rejected:** letting spec 02 add the flag when it adds the reader — spec 02 does not own
+`cli.ts` and would be editing another spec's file.
+**Spec/Task:** spec 01 Task 16 Step 3.
+
+## 2026-08-28 — One import per module in cli.ts, not one per task
+
+**Decision:** Task 19's `import { autodetectDir, setConfigDir } from './config.js';` was
+merged into the existing `import { resolveConfig } from './config.js';` line, giving
+`import { autodetectDir, resolveConfig, setConfigDir } from './config.js';`. The value
+and `import type` pair from `./render/status.js` stays two statements, as the spec writes
+it.
+**Why:** the spec's wording ("add these imports") would leave two separate named-import
+statements for the same specifier, which is duplication with no upside — the identifier
+set is what matters, and `import type` is a genuinely different statement kind so that
+pair is not duplication. ESLint has no `no-duplicate-imports` rule configured, so this is
+a readability call, not a lint fix. No identifier was added or dropped.
+**Rejected:** two `from './config.js'` lines exactly as written, and moving the whole
+import block, which would churn lines earlier tasks own.
+**Spec/Task:** spec 01 Task 19 Step 3, Task 20 Step 3.
+
+## 2026-08-28 — Two more Prettier reflows, in the scan command and the e2e imports
+
+**Decision:** the `blocks.push(...)` call in `scanCommand` keeps its three render calls on
+one argument line rather than the spec's exploded array, and `tests/cli.e2e.test.ts`
+splits the four-name `./fixtures/index.js` import across lines.
+**Why:** the same 100-column `printWidth` conflict recorded for Tasks 7, 10–11, 13–14 and
+16. The spec's array fits under 100 once collapsed, so Prettier collapses it; the e2e
+import line is 101 columns, so Prettier explodes it. Whitespace only — no argument,
+string, or imported name changed, and `tests/cli.config.test.ts`, `tests/cli.scan.test.ts`
+and every other line of both Task 19–21 blocks are byte-identical to the spec.
+**Rejected:** `// prettier-ignore`, for the reason recorded under Tasks 13–14.
+**Spec/Task:** spec 01 Task 20 Step 3, Task 21 Step 1.
+
+## 2026-08-28 — registerBuiltins may name commands declared below it
+
+**Decision:** `registerBuiltins()` sits where Task 19 put it, above `scanCommand` and
+`showCommand`, and Task 20 extends its body to register both.
+**Why:** the spec inserts each task's block immediately above the `process.argv[1]` guard,
+so Task 20's consts land after Task 19's function. That is safe here and only here:
+`registerBuiltins` is called from `ensureCommands()`, which `run()` awaits, so every
+`const` has been initialised long before the first call. The temporal-dead-zone hazard the
+contract warns about is the opposite case — a module-level `registerCommand(...)` that
+runs *during* evaluation.
+**Rejected:** moving `registerBuiltins` to the bottom of the file, which would reorder a
+block Task 19 already committed for no behavioural gain.
+**Spec/Task:** spec 01 Task 19 Step 3, Task 20 Step 3.
