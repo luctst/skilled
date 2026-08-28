@@ -1,7 +1,15 @@
 import os from 'node:os';
 import path from 'node:path';
 import pc from 'picocolors';
-import type { ConfigOrigin, EntryStatus, LocalItem, StatusReport, StatusRow } from '../types.js';
+import type {
+  ConfigOrigin,
+  Entry,
+  EntryStatus,
+  LocalItem,
+  ResolvedConfig,
+  StatusReport,
+  StatusRow,
+} from '../types.js';
 
 export interface RenderOptions {
   color: boolean;
@@ -145,4 +153,112 @@ export function statusLineSummary(report: StatusReport): string | null {
   const shown = names.slice(0, 3).join(', ');
   const more = names.length > 3 ? `, +${names.length - 3} more` : '';
   return `skilled: ${plural(report.behind, 'entry', 'entries')} behind upstream (${shown}${more}) · run \`skilled update\``;
+}
+
+export interface DirSummary {
+  dir: string;
+  counts: ItemCounts;
+}
+
+/** Two-column layout: a 20-character label, then the value. */
+function label(text: string): string {
+  return text.padEnd(20);
+}
+
+export function renderConfig(
+  config: ResolvedConfig,
+  dirs: DirSummary[],
+  opts: RenderOptions,
+): string {
+  const c = colors(opts);
+  const origin = ORIGIN_LABELS[config.origin];
+  const lines: string[] = [];
+
+  if (dirs.length === 0) {
+    lines.push(`${label('managed directory')}${c.dim('(none)')}  (${origin})`);
+  } else {
+    const heading = dirs.length === 1 ? 'managed directory' : 'managed directories';
+    dirs.forEach((summary, index) => {
+      const suffix = index === 0 ? `  (${origin})` : '';
+      lines.push(`${label(index === 0 ? heading : '')}${c.bold(tildify(summary.dir))}${suffix}`);
+      lines.push(`${label('')}${c.dim(formatCounts(summary.counts))}`);
+    });
+  }
+
+  const state = config.configExists ? 'in use' : 'not created yet';
+  lines.push(`${label('config file')}${tildify(config.configPath)}  (${state})`);
+  return lines.join('\n');
+}
+
+export function renderConfigSaved(
+  dirs: DirSummary[],
+  mode: 'replace' | 'add',
+  configFile: string,
+  opts: RenderOptions,
+): string {
+  const c = colors(opts);
+  const lines: string[] = [];
+  const only = dirs[0];
+
+  if (mode === 'replace' && dirs.length === 1 && only !== undefined) {
+    lines.push(`${label('managed directory')}${c.bold(tildify(only.dir))}  ${c.green('✓ saved')}`);
+    lines.push(`  found ${formatCounts(only.counts)}`);
+  } else {
+    lines.push(`managing ${plural(dirs.length, 'directory', 'directories')}:`);
+    for (const summary of dirs) {
+      lines.push(`  ${tildify(summary.dir).padEnd(24)}${formatCounts(summary.counts)}`);
+    }
+  }
+
+  lines.push(`  ${c.dim(`saved to ${tildify(configFile)}`)}`);
+  return lines.join('\n');
+}
+
+export function renderNoManagedDirHint(autodetected: string, opts: RenderOptions): string {
+  const c = colors(opts);
+  return [
+    '',
+    `  ${c.bold('No managed directory yet.')}`,
+    `  skilled looked at ${tildify(autodetected)} and found no skills/ or agents/ subdirectory.`,
+    '',
+    '  → skilled config dir <path>   point skilled at your instructions directory',
+  ].join('\n');
+}
+
+export function renderItemDetail(
+  item: LocalItem,
+  entry: Entry | undefined,
+  opts: RenderOptions,
+): string {
+  const c = colors(opts);
+  const field = (text: string): string => `  ${text.padEnd(10)}`;
+  const files = item.files
+    .map((file) => (file === '' ? path.basename(item.absPath) : file))
+    .join(', ');
+
+  const lines: string[] = [
+    c.bold(item.id),
+    `${field('path')}${tildify(item.absPath)}`,
+    `${field('kind')}${item.kind}`,
+    `${field('files')}${files}`,
+  ];
+
+  if (entry === undefined) {
+    lines.push(`${field('source')}${c.dim('unknown — not tracked yet')}`);
+    lines.push('');
+    lines.push(`  → skilled add <url> ${item.id}   record where this came from`);
+    return lines.join('\n');
+  }
+
+  const subpath = entry.source.subpath === '' ? '' : ` · ${entry.source.subpath}`;
+  const reconstructed = entry.base.reconstructed ? ' (reconstructed)' : '';
+  lines.push(`${field('source')}github.com/${entry.source.repo} (${entry.source.ref})${subpath}`);
+  lines.push(
+    `${field('base')}${entry.base.commit.slice(0, 7)} adopted ${entry.base.adoptedAt}${reconstructed}`,
+  );
+  lines.push(
+    `${field('detected')}${entry.detection.method} · confidence ${entry.detection.confidence.toFixed(2)} · ${entry.detection.confirmedBy ?? 'unconfirmed'}`,
+  );
+  lines.push(`${field('evidence')}${entry.detection.evidence}`);
+  return lines.join('\n');
 }
