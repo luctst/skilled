@@ -1,8 +1,16 @@
 #!/usr/bin/env node
 import fs from 'node:fs/promises';
 import { pathToFileURL } from 'node:url';
-import { resolveConfig } from './config.js';
+import { autodetectDir, resolveConfig, setConfigDir } from './config.js';
+import { discover } from './discover.js';
 import { SkilledError } from './errors.js';
+import {
+  countItems,
+  renderConfig,
+  renderConfigSaved,
+  renderNoManagedDirHint,
+} from './render/status.js';
+import type { DirSummary, RenderOptions } from './render/status.js';
 import type { LocalItem, ResolvedConfig } from './types.js';
 
 export interface ParsedArgs {
@@ -269,6 +277,7 @@ let commandsRegistered = false;
 export async function ensureCommands(): Promise<void> {
   if (commandsRegistered) return;
   commandsRegistered = true;
+  registerBuiltins();
   await registerOptionalCommands();
 }
 
@@ -367,6 +376,98 @@ export async function run(argv: string[], io: RunIO = {}): Promise<number> {
     );
     return 3;
   }
+}
+
+export async function summarizeDirs(dirs: string[]): Promise<DirSummary[]> {
+  const summaries: DirSummary[] = [];
+  for (const dir of dirs) {
+    summaries.push({ dir, counts: countItems(await discover(dir)) });
+  }
+  return summaries;
+}
+
+const configCommand: Command = {
+  name: 'config',
+  summary: 'show or set which directory skilled manages',
+  async run(ctx: CommandContext) {
+    const opts: RenderOptions = { color: ctx.flags.color === true };
+    const env = ctx.env ?? process.env;
+    const subcommand = ctx.args[0];
+
+    if (subcommand === undefined) {
+      const dirs = await summarizeDirs(ctx.config.dirs);
+      if (ctx.flags.json === true) {
+        ctx.stdout(
+          JSON.stringify(
+            {
+              origin: ctx.config.origin,
+              configPath: ctx.config.configPath,
+              configExists: ctx.config.configExists,
+              dirs: dirs.map((summary) => ({
+                dir: summary.dir,
+                skills: summary.counts.skills,
+                agents: summary.counts.agents,
+              })),
+            },
+            null,
+            2,
+          ),
+        );
+        return 0;
+      }
+      ctx.stdout(renderConfig(ctx.config, dirs, opts));
+      if (dirs.length === 0) {
+        ctx.stdout(renderNoManagedDirHint(autodetectDir(env), opts));
+      }
+      return 0;
+    }
+
+    if (subcommand !== 'dir') {
+      throw new SkilledError({
+        code: 'BAD_FLAG',
+        problem: `Unknown \`skilled config\` subcommand: ${subcommand}`,
+        cause:
+          '`skilled config` takes no subcommand, or `dir <path>`. No managed file was modified.',
+        fixes: [
+          'skilled config                      show the current setup',
+          'skilled config dir <path>           manage that directory instead',
+          'skilled config dir --add <path>     manage it as well',
+        ],
+        exitCode: 2,
+      });
+    }
+
+    const target = ctx.args[1];
+    if (target === undefined) {
+      throw new SkilledError({
+        code: 'BAD_FLAG',
+        problem: '`skilled config dir` needs a path.',
+        cause:
+          'It sets which directory skilled manages, so it needs exactly one path. No managed file was modified.',
+        fixes: [
+          'skilled config dir ~/.claude',
+          'skilled config dir --add ./.claude',
+          'skilled config                      show the current setup',
+        ],
+        exitCode: 2,
+      });
+    }
+
+    const mode: 'replace' | 'add' = ctx.flags.add === true ? 'add' : 'replace';
+    const saved = await setConfigDir(target, mode, env);
+    const dirs = await summarizeDirs(saved.dirs);
+
+    if (ctx.flags.json === true) {
+      ctx.stdout(JSON.stringify(saved, null, 2));
+      return 0;
+    }
+    ctx.stdout(renderConfigSaved(dirs, mode, ctx.config.configPath, opts));
+    return 0;
+  },
+};
+
+export function registerBuiltins(): void {
+  registerCommand(configCommand);
 }
 
 if (process.argv[1] !== undefined && import.meta.url === pathToFileURL(process.argv[1]).href) {
