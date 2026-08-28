@@ -401,3 +401,28 @@ compiler about a genuine mismatch rather than resolving it; and making the inter
 parameter optional, which would let a caller drop the encoding a raw-mode prompt depends
 on.
 **Spec/Task:** spec 01 Task 15 Step 3.
+
+## 2026-08-28 — One more Prettier reflow in the Task 16 flag tables
+
+**Decision:** `src/cli.ts` keeps the spec's code with `BOOLEAN_FLAGS` split one entry per
+line, and `tests/cli.run.test.ts` keeps the spec's test with the `Capture.io` type literal
+and the one-line `async run() { return 1; }` double expanded.
+**Why:** the same 100-column `printWidth` conflict already recorded for `types.ts` and
+Tasks 7, 10–11 and 13–14. The `BOOLEAN_FLAGS` line is 103 columns, the `Capture.io` line
+107. Whitespace only — no flag name, string, or argument changed, and `src/cli.ts` for
+Tasks 17–18 and `tests/cli.flags.test.ts` / `tests/cli.registry.test.ts` are
+byte-identical to the spec.
+**Rejected:** `// prettier-ignore`, for the reason recorded under Tasks 13–14.
+**Spec/Task:** spec 01 Task 16 Step 3, Task 18 Step 1.
+
+## 2026-08-28 — Adding a flag means editing BOOLEAN_FLAGS, not just the help text
+
+**Decision:** `--confirm-each` is carried in `BOOLEAN_FLAGS` in `src/cli.ts` and covered by
+its own test in `tests/cli.flags.test.ts`, even though no spec 01 command reads it.
+**Why:** `parseArgs` rejects any token that is in neither `BOOLEAN_FLAGS` nor
+`VALUE_FLAGS`, so a flag documented in `usage()` but missing from the set exits 2 on the
+real binary while every unit test of the consuming command stays green. Spec 02 is the
+first reader; the parser has to accept it before then.
+**Rejected:** letting spec 02 add the flag when it adds the reader — spec 02 does not own
+`cli.ts` and would be editing another spec's file.
+**Spec/Task:** spec 01 Task 16 Step 3.
