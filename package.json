@@ -28,7 +28,7 @@
   },
   "dependencies": {
     "picocolors": "^1.1.1",
-    "zod": "^3.25.76"
+    "zod": "^4.6.6"
   },
   "devDependencies": {
     "@commitlint/cli": "^19.6.1",
